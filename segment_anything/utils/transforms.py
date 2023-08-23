@@ -11,7 +11,7 @@ from torchvision.transforms.functional import resize, to_pil_image  # type: igno
 
 from copy import deepcopy
 from typing import Tuple
-
+import pdb
 
 class ResizeLongestSide:
     """
@@ -22,6 +22,7 @@ class ResizeLongestSide:
 
     def __init__(self, target_length: int) -> None:
         self.target_length = target_length
+        # target_length = 1024 for light
 
     def apply_image(self, image: np.ndarray) -> np.ndarray:
         """
@@ -95,6 +96,8 @@ class ResizeLongestSide:
         """
         Compute the output size given input size and target long side length.
         """
+        # long_side_length -- 1024 for light
+
         scale = long_side_length * 1.0 / max(oldh, oldw)
         newh, neww = oldh * scale, oldw * scale
         neww = int(neww + 0.5)

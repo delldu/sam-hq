@@ -13,36 +13,23 @@ from typing import Any, Dict, List, Tuple
 from .image_encoder import ImageEncoderViT
 from .mask_decoder import MaskDecoder
 from .prompt_encoder import PromptEncoder
-
+import pdb
 
 class Sam(nn.Module):
     mask_threshold: float = 0.0
     image_format: str = "RGB"
 
-    def __init__(
-        self,
-        image_encoder: ImageEncoderViT,
-        prompt_encoder: PromptEncoder,
-        mask_decoder: MaskDecoder,
-        pixel_mean: List[float] = [123.675, 116.28, 103.53],
-        pixel_std: List[float] = [58.395, 57.12, 57.375],
-    ) -> None:
-        """
-        SAM predicts object masks from an image and input prompts.
-
-        Arguments:
-          image_encoder (ImageEncoderViT): The backbone used to encode the
-            image into image embeddings that allow for efficient mask prediction.
-          prompt_encoder (PromptEncoder): Encodes various types of input prompts.
-          mask_decoder (MaskDecoder): Predicts masks from the image embeddings
-            and encoded prompts.
-          pixel_mean (list(float)): Mean values for normalizing pixels in the input image.
-          pixel_std (list(float)): Std values for normalizing pixels in the input image.
-        """
+    def __init__(self,
+        image_encoder,
+        prompt_encoder,
+        mask_decoder,
+        pixel_mean=[123.675, 116.28, 103.53],
+        pixel_std=[58.395, 57.12, 57.375],
+    ):
         super().__init__()
-        self.image_encoder = image_encoder
-        self.prompt_encoder = prompt_encoder
-        self.mask_decoder = mask_decoder
+        self.image_encoder = image_encoder # TinyViT()
+        self.prompt_encoder = prompt_encoder # PromptEncoder()
+        self.mask_decoder = mask_decoder # MaskDecoderHQ(...)
         self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
         self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
 
@@ -50,8 +37,7 @@ class Sam(nn.Module):
     def device(self) -> Any:
         return self.pixel_mean.device
 
-    def forward(
-        self,
+    def forward(self,
         batched_input: List[Dict[str, Any]],
         multimask_output: bool,
         hq_token_only: bool =False,
@@ -133,12 +119,11 @@ class Sam(nn.Module):
             )
         return outputs
 
-    def postprocess_masks(
-        self,
-        masks: torch.Tensor,
+    def postprocess_masks(self,
+        masks,
         input_size: Tuple[int, ...],
         original_size: Tuple[int, ...],
-    ) -> torch.Tensor:
+    ):
         """
         Remove padding and upscale masks to the original image size.
 
@@ -154,8 +139,7 @@ class Sam(nn.Module):
           (torch.Tensor): Batched masks in BxCxHxW format, where (H, W)
             is given by original_size.
         """
-        masks = F.interpolate(
-            masks,
+        masks = F.interpolate(masks,
             (self.image_encoder.img_size, self.image_encoder.img_size),
             mode="bilinear",
             align_corners=False,
@@ -164,7 +148,7 @@ class Sam(nn.Module):
         masks = F.interpolate(masks, original_size, mode="bilinear", align_corners=False)
         return masks
 
-    def preprocess(self, x: torch.Tensor) -> torch.Tensor:
+    def preprocess(self, x):
         """Normalize pixel values and pad to a square input."""
         # Normalize colors
         x = (x - self.pixel_mean) / self.pixel_std

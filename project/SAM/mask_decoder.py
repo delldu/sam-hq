@@ -8,45 +8,29 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-
-from typing import List, Tuple, Type
-
+from typing import List, Tuple
 from .common import LayerNorm2d
+from .transformer import TwoWayTransformer
 
+import pdb
 
 class MaskDecoderHQ(nn.Module):
-    def __init__(
-        self,
-        *,
-        transformer_dim: int,
-        transformer: nn.Module,
-        num_multimask_outputs: int = 3,
-        activation: Type[nn.Module] = nn.GELU,
-        iou_head_depth: int = 3,
-        iou_head_hidden_dim: int = 256,
-        vit_dim: int = 1024,
-    ) -> None:
-        """
-        Predicts masks given an image and prompt embeddings, using a
-        transformer architecture.
-
-        Arguments:
-          transformer_dim (int): the channel dimension of the transformer
-          transformer (nn.Module): the transformer used to predict masks
-          num_multimask_outputs (int): the number of masks to predict
-            when disambiguating masks
-          activation (nn.Module): the type of activation to use when
-            upscaling masks
-          iou_head_depth (int): the depth of the MLP used to predict
-            mask quality
-          iou_head_hidden_dim (int): the hidden dimension of the MLP
-            used to predict mask quality
-        """
+    def __init__(self,
+        # *,
+        transformer_dim, # =256,
+        # transformer: nn.Module, # TwoWayTransformer()
+        num_multimask_outputs=3,
+        activation=nn.GELU,
+        iou_head_depth=3,
+        iou_head_hidden_dim=256,
+        vit_dim=160,
+    ):
         super().__init__()
-        self.transformer_dim = transformer_dim
-        self.transformer = transformer
 
-        self.num_multimask_outputs = num_multimask_outputs
+        # self.transformer_dim = transformer_dim
+        self.transformer = TwoWayTransformer()
+
+        # self.num_multimask_outputs = num_multimask_outputs
 
         self.iou_token = nn.Embedding(1, transformer_dim)
         self.num_mask_tokens = num_multimask_outputs + 1
@@ -61,14 +45,11 @@ class MaskDecoderHQ(nn.Module):
         )
         self.output_hypernetworks_mlps = nn.ModuleList(
             [
-                MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3)
-                for i in range(self.num_mask_tokens)
+                MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3) for i in range(self.num_mask_tokens)
             ]
         )
 
-        self.iou_prediction_head = MLP(
-            transformer_dim, iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth
-        )
+        self.iou_prediction_head = MLP(transformer_dim, iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth)
 
         # HQ-SAM parameters
         self.hf_token = nn.Embedding(1, transformer_dim) # HQ-Ouptput-Token
@@ -77,48 +58,35 @@ class MaskDecoderHQ(nn.Module):
         
         # three conv fusion layers for obtaining HQ-Feature
         self.compress_vit_feat = nn.Sequential(
-                                        nn.ConvTranspose2d(vit_dim, transformer_dim, kernel_size=2, stride=2),
-                                        LayerNorm2d(transformer_dim),
-                                        nn.GELU(), 
-                                        nn.ConvTranspose2d(transformer_dim, transformer_dim // 8, kernel_size=2, stride=2))
+                    nn.ConvTranspose2d(vit_dim, transformer_dim, kernel_size=2, stride=2),
+                    LayerNorm2d(transformer_dim),
+                    nn.GELU(), 
+                    nn.ConvTranspose2d(transformer_dim, transformer_dim // 8, kernel_size=2, stride=2))
         
         self.embedding_encoder = nn.Sequential(
-                                        nn.ConvTranspose2d(transformer_dim, transformer_dim // 4, kernel_size=2, stride=2),
-                                        LayerNorm2d(transformer_dim // 4),
-                                        nn.GELU(),
-                                        nn.ConvTranspose2d(transformer_dim // 4, transformer_dim // 8, kernel_size=2, stride=2),
-                                    )
+                    nn.ConvTranspose2d(transformer_dim, transformer_dim // 4, kernel_size=2, stride=2),
+                    LayerNorm2d(transformer_dim // 4),
+                    nn.GELU(),
+                    nn.ConvTranspose2d(transformer_dim // 4, transformer_dim // 8, kernel_size=2, stride=2),
+                )
         self.embedding_maskfeature = nn.Sequential(
-                                        nn.Conv2d(transformer_dim // 8, transformer_dim // 4, 3, 1, 1), 
-                                        LayerNorm2d(transformer_dim // 4),
-                                        nn.GELU(),
-                                        nn.Conv2d(transformer_dim // 4, transformer_dim // 8, 3, 1, 1))
-
-
+                    nn.Conv2d(transformer_dim // 8, transformer_dim // 4, 3, 1, 1), 
+                    LayerNorm2d(transformer_dim // 4),
+                    nn.GELU(),
+                    nn.Conv2d(transformer_dim // 4, transformer_dim // 8, 3, 1, 1))
 
     def forward(self,
-        image_embeddings: torch.Tensor,
-        image_pe: torch.Tensor,
-        sparse_prompt_embeddings: torch.Tensor,
-        dense_prompt_embeddings: torch.Tensor,
+        image_embeddings,
+        image_pe,
+        sparse_prompt_embeddings,
+        dense_prompt_embeddings,
         multimask_output: bool,
         hq_token_only: bool,
-        interm_embeddings: torch.Tensor,
+        interm_embeddings,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Predict masks given image and prompt embeddings.
 
-        Arguments:
-          image_embeddings (torch.Tensor): the embeddings from the ViT image encoder
-          image_pe (torch.Tensor): positional encoding with the shape of image_embeddings
-          sparse_prompt_embeddings (torch.Tensor): the embeddings of the points and boxes
-          dense_prompt_embeddings (torch.Tensor): the embeddings of the mask inputs
-          multimask_output (bool): Whether to return multiple masks or a single
-            mask.
-
-        Returns:
-          torch.Tensor: batched predicted masks
-          torch.Tensor: batched predictions of mask quality
         """
         vit_features = interm_embeddings[0].permute(0, 3, 1, 2) # early-layer ViT feature, after 1st global attention block in ViT
         hq_features = self.embedding_encoder(image_embeddings) + self.compress_vit_feat(vit_features)
@@ -150,18 +118,18 @@ class MaskDecoderHQ(nn.Module):
         if hq_token_only:
             masks = masks_hq
         else:
-            masks = masks_sam + masks_hq
+            masks = masks_sam + masks_hq # image includes multiple objects ???
         # Prepare output
         return masks, iou_pred
 
     def predict_masks(self,
-        image_embeddings: torch.Tensor,
-        image_pe: torch.Tensor,
-        sparse_prompt_embeddings: torch.Tensor,
-        dense_prompt_embeddings: torch.Tensor,
-        hq_features: torch.Tensor,
+        image_embeddings,
+        image_pe,
+        sparse_prompt_embeddings,
+        dense_prompt_embeddings,
+        hq_features,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Predicts masks. See 'forward' for more details."""
+
         # Concatenate output tokens
         output_tokens = torch.cat([self.iou_token.weight, self.mask_tokens.weight, self.hf_token.weight], dim=0)
         output_tokens = output_tokens.unsqueeze(0).expand(sparse_prompt_embeddings.size(0), -1, -1)
@@ -206,14 +174,7 @@ class MaskDecoderHQ(nn.Module):
 # Lightly adapted from
 # https://github.com/facebookresearch/MaskFormer/blob/main/mask_former/modeling/transformer/transformer_predictor.py # noqa
 class MLP(nn.Module):
-    def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        output_dim: int,
-        num_layers: int,
-        sigmoid_output: bool = False,
-    ) -> None:
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, sigmoid_output=False):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)

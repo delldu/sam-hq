@@ -12,7 +12,7 @@ from .modeling import Sam
 from typing import Optional, Tuple
 
 from .utils.transforms import ResizeLongestSide
-
+import pdb
 
 class SamPredictor:
     def __init__(
@@ -157,9 +157,9 @@ class SamPredictor:
         masks, iou_predictions, low_res_masks = self.predict_torch(
             coords_torch,
             labels_torch,
-            box_torch,
+            box_torch, # size() -- [1, 1, 4]
             mask_input_torch,
-            multimask_output,
+            multimask_output, # False
             return_logits=return_logits,
             hq_token_only=hq_token_only,
         )
