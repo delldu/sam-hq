@@ -164,6 +164,8 @@ class SamPredictor:
             hq_token_only=hq_token_only,
         )
 
+        pdb.set_trace()
+
         masks_np = masks[0].detach().cpu().numpy()
         iou_predictions_np = iou_predictions[0].detach().cpu().numpy()
         low_res_masks_np = low_res_masks[0].detach().cpu().numpy()
@@ -223,10 +225,17 @@ class SamPredictor:
         else:
             points = None
 
+        # self.input_size -- (1024, 1024)
+        # points -- 
+        # (tensor([[[221., 482.],
+        #  [498., 633.],
+        #  [750., 379.]]], device='cuda:0'),
+        #  tensor([[1, 1, 1]], device='cuda:0', dtype=torch.int32))
+
         # Embed prompts
         sparse_embeddings, dense_embeddings = self.model.prompt_encoder(
             points=points,
-            boxes=boxes,
+            boxes=boxes, # size() -- [2, 4]
             masks=mask_input,
         )
 
@@ -236,15 +245,15 @@ class SamPredictor:
             image_pe=self.model.prompt_encoder.get_dense_pe(),
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
-            multimask_output=multimask_output,
-            hq_token_only=hq_token_only,
+            multimask_output=multimask_output, # False
+            hq_token_only=hq_token_only, # True
             interm_embeddings=self.interm_features,
         )
 
         # Upscale the masks to the original image resolution
         masks = self.model.postprocess_masks(low_res_masks, self.input_size, self.original_size)
 
-        if not return_logits:
+        if not return_logits: # True
             masks = masks > self.model.mask_threshold
 
         return masks, iou_predictions, low_res_masks

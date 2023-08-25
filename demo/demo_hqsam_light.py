@@ -67,7 +67,6 @@ if __name__ == "__main__":
     sam.eval()
     predictor = SamPredictor(sam)
 
-
     for i in range(8):
         print("image:   ",i)
         # hq_token_only: False means use hq output to correct SAM output. 
