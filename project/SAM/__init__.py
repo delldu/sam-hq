@@ -102,10 +102,9 @@ def predict(test_database, output_dir):
             output_mask = model(input_image, input_boxes)
 
         output_file = f"{output_dir}/{os.path.basename(filename)}"
+
         output_tensor = blender(input_image, output_mask)
-
         output_tensor = draw_points_boxes(output_tensor.cpu(), boxes_list)
-
         todos.data.save_tensor([input_image, output_tensor], output_file)
 
     progress_bar.close()
