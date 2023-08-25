@@ -15,8 +15,8 @@ from timm.models.layers import DropPath as TimmDropPath,\
     to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 from typing import Tuple
-import pdb
 from .common import LayerNorm2d
+import pdb
 
 
 class Conv2d_BN(torch.nn.Sequential):
@@ -470,20 +470,26 @@ class TinyViT(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward_features(self, x):
+    def forward_features(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         # x: (N, C, H, W)
         x = self.patch_embed(x)
 
         x = self.layers[0](x)
-        start_i = 1
-
-        interm_embeddings=[]
-        for i in range(start_i, len(self.layers)):
-            layer = self.layers[i]
-            x = layer(x)
-            # print('x shape:', x.shape, '---i:', i)
-            if i == 1:
-                interm_embeddings.append(x.view(x.shape[0], 64, 64, -1))
+        # to support torch.jit.script
+        # start_i = 1
+        # interm_embeddings=[]
+        # to support torch.jit.script
+        # for i in range(start_i, len(self.layers)):
+        #     layer = self.layers[i]
+        #     x = layer(x)
+        #     if i == 1:
+        #         interm_embeddings.append(x.view(x.shape[0], 64, 64, -1))
+        interm_embeddings = x
+        for i, layer in enumerate(self.layers):
+            if i > 0: # skip first layer
+                x = layer(x)
+                if i == 1:
+                    interm_embeddings = x.view(x.shape[0], 64, 64, -1)
 
         B, _ , C = x.size()
         x = x.view(B, 64, 64, C)
@@ -491,7 +497,7 @@ class TinyViT(nn.Module):
         x = self.neck(x)
         return x, interm_embeddings
 
-    def forward(self, x):
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         x, interm_embeddings = self.forward_features(x)
         return x, interm_embeddings
 

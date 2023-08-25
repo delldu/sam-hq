@@ -88,7 +88,7 @@ class MaskDecoderHQ(nn.Module):
         Predict masks given image and prompt embeddings.
 
         """
-        vit_features = interm_embeddings[0].permute(0, 3, 1, 2) # early-layer ViT feature, after 1st global attention block in ViT
+        vit_features = interm_embeddings.permute(0, 3, 1, 2) # early-layer ViT feature, after 1st global attention block in ViT
         hq_features = self.embedding_encoder(image_embeddings) + self.compress_vit_feat(vit_features)
 
         masks, iou_pred = self.predict_masks(
@@ -120,7 +120,7 @@ class MaskDecoderHQ(nn.Module):
         else:
             masks = masks_sam + masks_hq # image includes multiple objects ???
         # Prepare output
-        return masks, iou_pred
+        return iou_pred, masks
 
     def predict_masks(self,
         image_embeddings,
@@ -153,11 +153,16 @@ class MaskDecoderHQ(nn.Module):
         upscaled_embedding_hq = self.embedding_maskfeature(upscaled_embedding_sam) + hq_features.repeat(b,1,1,1)
 
         hyper_in_list: List[torch.Tensor] = []
-        for i in range(self.num_mask_tokens):
-            if i < self.num_mask_tokens - 1:
-                hyper_in_list.append(self.output_hypernetworks_mlps[i](mask_tokens_out[:, i, :]))
-            else:
-                hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, i, :]))
+        # to support torch.jit.script
+        # for i in range(self.num_mask_tokens): # self.num_mask_tokens -- 5
+        #     if i < self.num_mask_tokens - 1:
+        #         hyper_in_list.append(self.output_hypernetworks_mlps[i](mask_tokens_out[:, i, :]))
+        #     else:
+        #         hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, i, :]))
+        # # len(self.output_hypernetworks_mlps) -- 4
+        for i, m in enumerate(self.output_hypernetworks_mlps):
+            hyper_in_list.append(m(mask_tokens_out[:, i, :]))
+        hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, i, :])) # i == 4
 
         hyper_in = torch.stack(hyper_in_list, dim=1)
         b, c, h, w = upscaled_embedding_sam.shape

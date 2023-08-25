@@ -55,8 +55,6 @@ def create_model():
     model.eval()
     print(f"Running model on {device} ...")
 
-    print(model)
-
     return model, device
 
 

@@ -7,7 +7,7 @@
 import numpy as np
 import torch
 from torch import nn
-from typing import Any, Optional, Tuple, Type
+from typing import Optional, Tuple, Type
 from .common import LayerNorm2d
 import pdb
 
@@ -161,8 +161,7 @@ class PositionEmbeddingRandom(nn.Module):
     def forward(self, size: Tuple[int, int]):
         """Generate positional encoding for a grid of the specified size."""
         h, w = size
-        device: Any = self.positional_encoding_gaussian_matrix.device
-        grid = torch.ones((h, w), device=device, dtype=torch.float32)
+        grid = torch.ones((h, w), device=self.positional_encoding_gaussian_matrix.device, dtype=torch.float32)
         y_embed = grid.cumsum(dim=0) - 0.5
         x_embed = grid.cumsum(dim=1) - 0.5
         y_embed = y_embed / h
