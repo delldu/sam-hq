@@ -17,7 +17,7 @@ class MLPBlock(nn.Module):
         super().__init__()
         self.lin1 = nn.Linear(embedding_dim, mlp_dim)
         self.lin2 = nn.Linear(mlp_dim, embedding_dim)
-        self.act = nn.GELU()
+        self.act = nn.ReLU() # nn.GELU()
 
     def forward(self, x):
         return self.lin2(self.act(self.lin1(x)))

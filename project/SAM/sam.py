@@ -13,48 +13,10 @@ from torch.nn import functional as F
 from .image_encoder import TinyViT
 from .mask_decoder import MaskDecoderHQ
 from .prompt_encoder import PromptEncoder
-
 from typing import List, Tuple
-
 import pdb
 
-
-def resize_pad(x, max_h: int, max_w: int, max_times: int) -> Tuple[torch.Tensor, int, int]:
-    # Need Resize ?
-    B, C, H, W = x.size()
-    if H > max_h or W > max_w:
-        s = min(max_h / H, max_w / W)
-        SH, SW = int(s * H), int(s * W)
-        resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=True)
-    else:
-        resize_x = x
-
-    # Need Pad ?
-    pad_h, pad_w = resize_x.size(2), resize_x.size(3)
-    if pad_h % max_times != 0 or pad_w % max_times != 0:
-        # pad_h:  802 pad_w:  1024 for max_times == 8 ?
-        r_pad = 0
-        if (pad_w % max_times) != 0:
-            r_pad = max_times - (pad_w % max_times)
-        b_pad = 0
-        if (pad_h % max_times) != 0:
-            b_pad = max_times - (pad_h % max_times)
-
-        resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
-    else:
-        resize_pad_x = resize_x
-
-    return resize_pad_x, pad_h, pad_w
-
-
-def pad_resize(y, pad_h: int, pad_w: int, h: int, w: int):
-    y = y[:, :, 0 : pad_h, 0 : pad_w]  # Remove Pads
-    return F.interpolate(y, size=(h, w), mode="bilinear", align_corners=True)  # Remove Resize
-
-
-
 class MobileSAM(nn.Module):
-    mask_threshold: float = 0.0
     def __init__(self, pixel_mean=[123.675, 116.28, 103.53], pixel_std=[58.395, 57.12, 57.375]):
         super().__init__()
         self.MAX_H = 1024
@@ -84,63 +46,70 @@ class MobileSAM(nn.Module):
         self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
         self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
 
-
         self.load_weights()
 
 
-    def forward(self, image, boxes=None):
+    def forward(self, image, boxes):
         '''
         image: 1xCxHxW
         boxes: Bx4
         '''
-        
-        
+        B, C, H, W = image.size()
+        boxes[:, 0] = boxes[:, 0].clamp(0, W)
+        boxes[:, 1] = boxes[:, 1].clamp(0, H)
+        boxes[:, 2] = boxes[:, 2].clamp(0, W)
+        boxes[:, 3] = boxes[:, 3].clamp(0, H)
+
+        image, pad_h, pad_w, resize_s = self.pre_process_image(image * 255.0)
+        boxes = boxes * resize_s
+
+        point_list = []
+        boxes_list = []
+        for box in boxes:
+            x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+            # Suppose small box is point
+            if (x2 - x1) < 10.0 and (y2 - y1) < 10.0:
+                x = (x1 + x2)/2.0
+                y = (y1 + y2)/2.0
+                point_list.append(torch.stack((x, y), dim=0))
+            else:
+                boxes_list.append(torch.tensor([x1, y1, x2, y2]).to(image.device))
+
+        coords = None
+        labels = None
+        if len(point_list) > 0:
+            coords = torch.stack(point_list, dim=0)
+            labels = torch.ones((len(point_list),)).to(image.device)
+        boxes = None
+        if len(boxes_list) > 0:
+            boxes = torch.stack(boxes_list, dim=0)
+
+        iou_predictions, res_masks = self.forward_x(image, coords, labels, boxes)
+
+        masks = self.post_process_mask(res_masks, (pad_h, pad_w), (H, W))
+
+        masks = (masks > 0.0)
+
+        return masks # Bx1xHxW
 
 
+    def forward_x(self, image, coords, labels, boxes) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        features, interm_features = self.image_encoder(image)
 
-        return image
+        points = None
+        if coords is not None:
+            points = (coords[None, :, :], labels[None,  :])
 
+        # self.input_size -- (1024, 1024)
+        # points -- 
+        # (tensor([[[221., 482.],
+        #  [498., 633.],
+        #  [750., 379.]]], device='cuda:0'),
+        #  tensor([[1, 1, 1]], device='cuda:0', dtype=torch.int32))
 
-
-        # B, C, H, W = x.size()
-
-        # resize_pad_x, pad_h, pad_w = resize_pad(x, self.MAX_H, self.MAX_W, self.MAX_TIMES)
-        # y = self.standard_forward(resize_pad_x)
-
-        # return pad_resize(y, pad_h, pad_w, H, W)        
-
-
-    def standard_forward(self, image):
-        image = self.preprocess(image)
-
-        features, self.interm_features = self.image_encoder(image)
-
-        layer_points = build_grid_points()
-
-        coords = layer_points[0].to(image.device)
-        labels = torch.Tensor(layer_points[0].size(0)).to(image.device)
-
-        batch_size = 32
-        for i in range(0, coords.size(0), batch_size):
-            batch_coords = coords[i: i + batch_size]
-            batch_labels = labels[i: i + batch_size]
-            batch_iou_predictions, batch_res_masks = self.points_forward(features, batch_coords, batch_labels)
-
-        return image # batch_res_masks
-
-
-    def points_forward(self, features, coords, labels) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        '''
-        # image.size() -- [1, 3, 1024, 1024]
-        # features = self.image_encoder(image)
-
-        features.size() -- [1, 256, 64, 64]
-        coords.size() -- [64, 2]
-        labels.size() -- [64]
-        '''
         sparse_embeddings, dense_embeddings = self.prompt_encoder(
-            points=(coords[:, None, :], labels[:, None]),
-            boxes=None,
+            points=points,
+            boxes=boxes,
             masks=None,
         )
         res_masks, iou_predictions = self.mask_decoder(
@@ -149,13 +118,18 @@ class MobileSAM(nn.Module):
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
             multimask_output=False,
-            hq_token_only=False,
-            interm_embeddings=self.interm_features,
+            hq_token_only=True,
+            interm_embeddings=interm_features,
         )
+        # tensor([[0.5946],
+        #         [0.1905],
+        #         [0.7547]], device='cuda:0')
+        # res_masks.size() -- torch.Size([3, 1, 256, 256])
+
         return iou_predictions, res_masks
 
 
-    def postprocess_masks(self, masks, input_size: Tuple[int, int], padded_size: Tuple[int, int]):
+    def post_process_mask(self, masks, padded_size: Tuple[int, int], input_size: Tuple[int, int], ):
         # masks.size() -- [64, 3, 256, 256]
         # padded_size -- (1024, 1024)
         # input_size -- (1024, 1024)
@@ -171,17 +145,36 @@ class MobileSAM(nn.Module):
         masks = F.interpolate(masks, input_size, mode="bilinear", align_corners=False)
         return masks
 
-    def preprocess(self, x) -> Tuple[torch.Tensor, int, int]:
-        # x.size() -- [1, 3, 1024, 1024], x.dtype=uint8
+    def pre_process_image(self, x) -> Tuple[torch.Tensor, int, int, float]:
+        # Normal
         x = (x - self.pixel_mean) / self.pixel_std
 
-        # Pad
-        h, w = x.shape[-2:]
-        padh = self.image_encoder.img_size - h
-        padw = self.image_encoder.img_size - w
-        x = F.pad(x, (0, padw, 0, padh))
+        # # Pad
+        # h, w = x.shape[-2:]
+        # padh = self.image_encoder.img_size - h
+        # padw = self.image_encoder.img_size - w
+        # x = F.pad(x, (0, padw, 0, padh))
 
-        return x
+        max_h = self.image_encoder.img_size
+        max_w = self.image_encoder.img_size
+
+        # Resize
+        B, C, H, W = x.size()
+        resize_s = 1.0
+        if H > max_h or W > max_w:
+            resize_s = min(1.0 * max_h/H, 1.0 * max_w/W)
+            SH, SW = int(resize_s * H), int(resize_s * W)
+            resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=True)
+        else:
+            resize_x = x
+
+        # Pad
+        pad_h, pad_w = resize_x.size(2), resize_x.size(3)
+        b_pad = max_h - pad_h
+        r_pad = max_w - pad_w
+        resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad))
+
+        return resize_pad_x, pad_h, pad_w, resize_s
 
 
     def load_weights(self, model_path="models/SAM.pth"):
