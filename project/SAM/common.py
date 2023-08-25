@@ -27,12 +27,12 @@ class LayerNorm2d(nn.Module):
 
 
 def blender(input_tensor, output_masks):
-    maks_tensor = input_tensor.clone()
+    masks_tensor = input_tensor.clone()
 
     for i, m in enumerate(output_masks):
         c = [30 / 255.0, 144 / 255.0, 255 / 255.0]
-        maks_tensor[:, 0:1, :, :] = torch.where(m, c[0], maks_tensor[:, 0:1, :, :])
-        maks_tensor[:, 1:2, :, :] = torch.where(m, c[1], maks_tensor[:, 1:2, :, :])
-        maks_tensor[:, 2:3, :, :] = torch.where(m, c[2], maks_tensor[:, 2:3, :, :])
+        masks_tensor[:, 0:1, :, :] = torch.where(m, c[0], masks_tensor[:, 0:1, :, :])
+        masks_tensor[:, 1:2, :, :] = torch.where(m, c[1], masks_tensor[:, 1:2, :, :])
+        masks_tensor[:, 2:3, :, :] = torch.where(m, c[2], masks_tensor[:, 2:3, :, :])
 
-    return 0.5 * input_tensor + 0.5 * maks_tensor
+    return 0.5 * input_tensor + 0.5 * masks_tensor

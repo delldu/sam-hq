@@ -11,8 +11,7 @@ import itertools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.layers import DropPath as TimmDropPath, to_2tuple, trunc_normal_
-from timm.models.registry import register_model
+from timm.models.layers import DropPath as TimmDropPath, trunc_normal_
 from typing import Tuple
 from .common import LayerNorm2d
 import pdb
@@ -253,13 +252,13 @@ class Attention(torch.nn.Module):
         self.attention_biases = torch.nn.Parameter(torch.zeros(num_heads, len(attention_offsets)))
         self.register_buffer("attention_bias_idxs", torch.LongTensor(idxs).view(N, N), persistent=False)
 
-    @torch.no_grad()
-    def train(self, mode=True):
-        super().train(mode)
-        if mode and hasattr(self, "ab"):
-            del self.ab
-        else:
-            self.register_buffer("ab", self.attention_biases[:, self.attention_bias_idxs], persistent=False)
+    # @torch.no_grad()
+    # def train(self, mode=True):
+    #     super().train(mode)
+    #     if mode and hasattr(self, "ab"):
+    #         del self.ab
+    #     else:
+    #         self.register_buffer("ab", self.attention_biases[:, self.attention_bias_idxs], persistent=False)
 
     def forward(self, x):  # x (B,N,C)
         B, N, _ = x.shape
@@ -275,9 +274,11 @@ class Attention(torch.nn.Module):
         k = k.permute(0, 2, 1, 3)
         v = v.permute(0, 2, 1, 3)
 
+        # attn = (q @ k.transpose(-2, -1)) * self.scale + (
+        #     self.attention_biases[:, self.attention_bias_idxs] if self.training else self.ab
+        # )
         attn = (q @ k.transpose(-2, -1)) * self.scale + (
-            self.attention_biases[:, self.attention_bias_idxs] if self.training else self.ab
-        )
+            self.attention_biases[:, self.attention_bias_idxs])
         attn = attn.softmax(dim=-1)
         x = (attn @ v).transpose(1, 2).reshape(B, N, self.dh)
         x = self.proj(x)
@@ -440,7 +441,6 @@ class TinyViT(nn.Module):
         drop_path_rate=0.0,
         mbconv_expand_ratio=4.0,
         local_conv_size=3,
-        layer_lr_decay=0.8,
     ):
         super().__init__()
         self.img_size = img_size
@@ -500,35 +500,24 @@ class TinyViT(nn.Module):
         # init weights
         # self.apply(self._init_weights)
 
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=0.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+    # def _init_weights(self, m):
+    #     if isinstance(m, nn.Linear):
+    #         trunc_normal_(m.weight, std=0.02)
+    #         if isinstance(m, nn.Linear) and m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
+    #     elif isinstance(m, nn.LayerNorm):
+    #         nn.init.constant_(m.bias, 0)
+    #         nn.init.constant_(m.weight, 1.0)
 
     def forward_features(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         # x: (N, C, H, W)
         x = self.patch_embed(x)
 
-        x = self.layers[0](x)
-        # to support torch.jit.script
-        # start_i = 1
-        # interm_embeddings=[]
-        # to support torch.jit.script
-        # for i in range(start_i, len(self.layers)):
-        #     layer = self.layers[i]
-        #     x = layer(x)
-        #     if i == 1:
-        #         interm_embeddings.append(x.view(x.shape[0], 64, 64, -1))
         interm_embeddings = x
         for i, layer in enumerate(self.layers):
-            if i > 0:  # skip first layer
-                x = layer(x)
-                if i == 1:
-                    interm_embeddings = x.view(x.shape[0], 64, 64, -1)
+            x = layer(x)
+            if i == 1:
+                interm_embeddings = x.view(x.shape[0], 64, 64, -1)
 
         B, _, C = x.size()
         x = x.view(B, 64, 64, C)
@@ -539,47 +528,3 @@ class TinyViT(nn.Module):
     def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         x, interm_embeddings = self.forward_features(x)
         return x, interm_embeddings
-
-
-# _checkpoint_url_format = \
-#     'https://github.com/wkcn/TinyViT-model-zoo/releases/download/checkpoints/{}.pth'
-# _provided_checkpoints = {
-#     'tiny_vit_5m_224': 'tiny_vit_5m_22kto1k_distill',
-# }
-
-
-# def register_tiny_vit_model(fn):
-#     '''Register a TinyViT model
-#     It is a wrapper of `register_model` with loading the pretrained checkpoint.
-#     '''
-#     def fn_wrapper(pretrained=False, **kwargs):
-#         model = fn()
-#         if pretrained:
-#             model_name = fn.__name__
-#             assert model_name in _provided_checkpoints, \
-#                 f'Sorry that the checkpoint `{model_name}` is not provided yet.'
-#             url = _checkpoint_url_format.format(
-#                 _provided_checkpoints[model_name])
-#             checkpoint = torch.hub.load_state_dict_from_url(
-#                 url=url,
-#                 map_location='cpu', check_hash=False,
-#             )
-#             model.load_state_dict(checkpoint['model'])
-
-#         return model
-
-#     # rename the name of fn_wrapper
-#     fn_wrapper.__name__ = fn.__name__
-#     return register_model(fn_wrapper)
-
-
-# @register_tiny_vit_model
-# def tiny_vit_5m_224(pretrained=False, num_classes=1000, drop_path_rate=0.0):
-#     return TinyViT(
-#         num_classes=num_classes,
-#         embed_dims=[64, 128, 160, 320],
-#         depths=[2, 2, 6, 2],
-#         num_heads=[2, 4, 5, 10],
-#         window_sizes=[7, 7, 14, 7],
-#         drop_path_rate=drop_path_rate,
-#     )

@@ -18,22 +18,15 @@ import pdb
 class MaskDecoderHQ(nn.Module):
     def __init__(
         self,
-        # *,
-        transformer_dim,  # =256,
-        # transformer: nn.Module, # TwoWayTransformer()
+        transformer_dim=256,
         num_multimask_outputs=3,
-        activation=nn.GELU,
         iou_head_depth=3,
         iou_head_hidden_dim=256,
         vit_dim=160,
     ):
         super().__init__()
-
-        # self.transformer_dim = transformer_dim
+        activation=nn.GELU
         self.transformer = TwoWayTransformer()
-
-        # self.num_multimask_outputs = num_multimask_outputs
-
         self.iou_token = nn.Embedding(1, transformer_dim)
         self.num_mask_tokens = num_multimask_outputs + 1
         self.mask_tokens = nn.Embedding(self.num_mask_tokens, transformer_dim)
@@ -85,8 +78,6 @@ class MaskDecoderHQ(nn.Module):
         image_pe,
         sparse_prompt_embeddings,
         dense_prompt_embeddings,
-        multimask_output: bool,
-        hq_token_only: bool,
         interm_embeddings,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -106,28 +97,11 @@ class MaskDecoderHQ(nn.Module):
             hq_features=hq_features,
         )
 
-        # Select the correct mask or masks for output
-        if multimask_output:
-            # mask with highest score
-            mask_slice = slice(1, self.num_mask_tokens - 1)
-            iou_pred = iou_pred[:, mask_slice]
-            iou_pred, max_iou_idx = torch.max(iou_pred, dim=1)
-            iou_pred = iou_pred.unsqueeze(1)
-            masks_multi = masks[:, mask_slice, :, :]
-            masks_sam = masks_multi[torch.arange(masks_multi.size(0)), max_iou_idx].unsqueeze(1)
-        else:
-            # singale mask output, default
-            mask_slice = slice(0, 1)
-            iou_pred = iou_pred[:, mask_slice]
-            masks_sam = masks[:, mask_slice]
+        mask_slice = slice(0, 1)
+        iou_pred = iou_pred[:, mask_slice]
 
         masks_hq = masks[:, slice(self.num_mask_tokens - 1, self.num_mask_tokens)]
-        if hq_token_only:
-            masks = masks_hq
-        else:
-            masks = masks_sam + masks_hq  # image includes multiple objects ???
-        # Prepare output
-        return iou_pred, masks
+        return iou_pred, masks_hq
 
     def predict_masks(
         self,
@@ -190,16 +164,17 @@ class MaskDecoderHQ(nn.Module):
 # Lightly adapted from
 # https://github.com/facebookresearch/MaskFormer/blob/main/mask_former/modeling/transformer/transformer_predictor.py # noqa
 class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, sigmoid_output=False):
+    def __init__(self, 
+            input_dim=256, 
+            hidden_dim=256, 
+            output_dim=32, 
+            num_layers=3):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
         self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
-        self.sigmoid_output = sigmoid_output
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
-        if self.sigmoid_output:
-            x = F.sigmoid(x)
         return x

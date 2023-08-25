@@ -7,7 +7,7 @@
 import numpy as np
 import torch
 from torch import nn
-from typing import Optional, Tuple, Type
+from typing import Optional, Tuple
 from .common import LayerNorm2d
 import pdb
 
@@ -127,12 +127,11 @@ class PositionEmbeddingRandom(nn.Module):
     """
     Positional encoding using random spatial frequencies.
     """
-    def __init__(self, num_pos_feats: int = 64, scale: Optional[float] = None):
+    def __init__(self, num_pos_feats: int = 128):
         super().__init__()
-        if scale is None or scale <= 0.0:
-            scale = 1.0
+        scale = 1.0
         self.register_buffer("positional_encoding_gaussian_matrix", scale * torch.randn((2, num_pos_feats)))
-
+        
     def _pe_encoding(self, coords):
         """Positionally encode points that are normalized to [0,1]."""
         # assuming coords are in [0, 1]^2 square and have d_1 x ... x d_n x 2 shape
@@ -158,6 +157,6 @@ class PositionEmbeddingRandom(nn.Module):
     def forward_with_coords(self, coords_input, image_size: Tuple[int, int]):
         """Positionally encode points that are not normalized to [0,1]."""
         coords = coords_input.clone()
-        coords[:, :, 0] = coords[:, :, 0] / image_size[1]
-        coords[:, :, 1] = coords[:, :, 1] / image_size[0]
+        coords[:, :, 0] = coords[:, :, 0] / image_size[1] # x
+        coords[:, :, 1] = coords[:, :, 1] / image_size[0] # y
         return self._pe_encoding(coords.to(torch.float))  # B x N x C

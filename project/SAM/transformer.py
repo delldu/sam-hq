@@ -33,11 +33,6 @@ class TwoWayTransformer(nn.Module):
         attention_downsample_rate=2,
     ):
         super().__init__()
-        # depth = 2
-        # embedding_dim = 256
-        # num_heads = 8
-        # mlp_dim = 2048
-
         self.depth = depth
         self.embedding_dim = embedding_dim
         self.num_heads = num_heads
@@ -92,10 +87,6 @@ class TwoWayAttentionBlock(nn.Module):
         skip_first_layer_pe=False,
     ):
         super().__init__()
-        # embedding_dim = 256
-        # num_heads = 8
-        # mlp_dim = 2048
-        # attention_downsample_rate = 2
         # skip_first_layer_pe = True if i == 0 else False
 
         self.self_attn = Attention(embedding_dim, num_heads)

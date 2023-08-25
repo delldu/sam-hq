@@ -90,7 +90,7 @@ class MobileSAM(nn.Module):
 
         iou_predictions, res_masks = self.forward_x(image, coords, labels, boxes)
 
-        masks = self.post_process_mask(res_masks, (pad_h, pad_w), (H, W))
+        masks = self.post_process_mask(res_masks, pad_h, pad_w, H, W)
 
         masks = masks > 0.0
 
@@ -106,7 +106,6 @@ class MobileSAM(nn.Module):
             labels = labels[None, :]
 
         sparse_embeddings, dense_embeddings = self.prompt_encoder(
-            # points=points,
             coords=coords,
             labels=labels,
             boxes=boxes,
@@ -117,23 +116,21 @@ class MobileSAM(nn.Module):
             image_pe=self.prompt_encoder.get_dense_pe(),
             sparse_prompt_embeddings=sparse_embeddings,
             dense_prompt_embeddings=dense_embeddings,
-            multimask_output=False,
-            hq_token_only=True,
+            # multimask_output=False,
+            # hq_token_only=True,
             interm_embeddings=interm_features,
         )
         # tensor([[0.5946],
         #         [0.1905],
         #         [0.7547]], device='cuda:0')
         # res_masks.size() -- torch.Size([3, 1, 256, 256])
-        # keep_mask = iou_predictions > 0.5
-        # iou_predictions = iou_predictions[keep_mask]
-        # res_masks = res_masks[keep_mask]
+
         return iou_predictions, res_masks
 
-    def post_process_mask(self, masks, padded_size: Tuple[int, int], input_size: Tuple[int, int]):
+    def post_process_mask(self, masks, padded_h: int, padded_w: int, original_h:int, original_w: int):
         # masks.size() -- [64, 3, 256, 256]
         # padded_size -- (1024, 1024)
-        # input_size -- (1024, 1024)
+        # original_size -- (1024, 1024)
 
         # self.image_encoder.img_size -- 1024
         masks = F.interpolate(
@@ -142,8 +139,8 @@ class MobileSAM(nn.Module):
             mode="bilinear",
             align_corners=False,
         )
-        masks = masks[..., : padded_size[0], : padded_size[1]]
-        masks = F.interpolate(masks, input_size, mode="bilinear", align_corners=False)
+        masks = masks[..., : padded_h, : padded_w]
+        masks = F.interpolate(masks, (original_h, original_w), mode="bilinear", align_corners=False)
         return masks
 
     def pre_process_image(self, x) -> Tuple[torch.Tensor, int, int, float]:
