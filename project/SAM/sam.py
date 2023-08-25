@@ -13,7 +13,7 @@ from torch.nn import functional as F
 from .image_encoder import TinyViT
 from .mask_decoder import MaskDecoderHQ
 from .prompt_encoder import PromptEncoder
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 import pdb
 
 
@@ -80,36 +80,27 @@ class MobileSAM(nn.Module):
                 boxes_list.append(torch.tensor([x1, y1, x2, y2]).to(image.device))
 
         coords: Optional[torch.Tensor] = None
-        labels: Optional[torch.Tensor] = None
         if len(point_list) > 0:
-            coords = torch.stack(point_list, dim=0)
-            labels = torch.ones((len(point_list),)).to(image.device)
+            coords = torch.stack(point_list, dim=0).unsqueeze(0)
         boxes: Optional[torch.Tensor] = None
         if len(boxes_list) > 0:
             boxes = torch.stack(boxes_list, dim=0)
 
-        iou_predictions, res_masks = self.forward_x(image, coords, labels, boxes)
+        iou_predictions, res_masks = self.forward_x(image, coords, boxes)
 
         masks = self.post_process_mask(res_masks, pad_h, pad_w, H, W)
-
         masks = masks > 0.0
 
         return masks  # Bx1xHxW
 
     def forward_x(
-        self, image, coords: Optional[torch.Tensor], labels: Optional[torch.Tensor], boxes: Optional[torch.Tensor]
+        self, image, coords: Optional[torch.Tensor], boxes: Optional[torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         features, interm_features = self.image_encoder(image)
 
-        if coords is not None:
-            coords = coords[None, :, :]
-            labels = labels[None, :]
-
         sparse_embeddings, dense_embeddings = self.prompt_encoder(
             coords=coords,
-            labels=labels,
             boxes=boxes,
-            masks=None,
         )
         iou_predictions, res_masks = self.mask_decoder(
             image_embeddings=features,

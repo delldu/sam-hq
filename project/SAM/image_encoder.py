@@ -252,14 +252,6 @@ class Attention(torch.nn.Module):
         self.attention_biases = torch.nn.Parameter(torch.zeros(num_heads, len(attention_offsets)))
         self.register_buffer("attention_bias_idxs", torch.LongTensor(idxs).view(N, N), persistent=False)
 
-    # @torch.no_grad()
-    # def train(self, mode=True):
-    #     super().train(mode)
-    #     if mode and hasattr(self, "ab"):
-    #         del self.ab
-    #     else:
-    #         self.register_buffer("ab", self.attention_biases[:, self.attention_bias_idxs], persistent=False)
-
     def forward(self, x):  # x (B,N,C)
         B, N, _ = x.shape
 
@@ -509,8 +501,7 @@ class TinyViT(nn.Module):
     #         nn.init.constant_(m.bias, 0)
     #         nn.init.constant_(m.weight, 1.0)
 
-    def forward_features(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
-        # x: (N, C, H, W)
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.patch_embed(x)
 
         interm_embeddings = x
@@ -525,6 +516,3 @@ class TinyViT(nn.Module):
         x = self.neck(x)
         return x, interm_embeddings
 
-    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
-        x, interm_embeddings = self.forward_features(x)
-        return x, interm_embeddings

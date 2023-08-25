@@ -71,10 +71,10 @@ def get_model():
     # torch::jit::getProfilingMode() = false;
     # torch::jit::setTensorExprFuserEnabled(false);
 
-    # model = torch.jit.script(model)
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/SAM.torch"):
-    #     model.save("output/SAM.torch")
+    model = torch.jit.script(model)
+    todos.data.mkdir("output")
+    if not os.path.exists("output/SAM.torch"):
+        model.save("output/SAM.torch")
 
     return model, device
 

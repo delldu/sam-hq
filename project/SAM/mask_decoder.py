@@ -97,10 +97,18 @@ class MaskDecoderHQ(nn.Module):
             hq_features=hq_features,
         )
 
-        mask_slice = slice(0, 1)
-        iou_pred = iou_pred[:, mask_slice]
+        # pdb.set_trace()
+        # iou_pred.size() -- [1, 4]
+        # masks.size() -- [1, 5, 256, 256]
 
-        masks_hq = masks[:, slice(self.num_mask_tokens - 1, self.num_mask_tokens)]
+        # mask_slice = slice(0, 1)
+        # iou_pred = iou_pred[:, mask_slice] # size() --> [1, 1]
+        iou_pred = iou_pred[:, 0:1] # size() --> [1, 1]
+
+        # self.num_mask_tokens -- 5
+        # masks_hq = masks[:, slice(self.num_mask_tokens - 1, self.num_mask_tokens)] # ==> [1, 1, 256, 256]
+        masks_hq = masks[:, self.num_mask_tokens - 1: self.num_mask_tokens, :, :] # ==> [1, 1, 256, 256]
+
         return iou_pred, masks_hq
 
     def predict_masks(
@@ -144,8 +152,8 @@ class MaskDecoderHQ(nn.Module):
         for i, m in enumerate(self.output_hypernetworks_mlps):
             hyper_in_list.append(m(mask_tokens_out[:, i, :]))
         hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, 4, :]))  # i == 4
-
         hyper_in = torch.stack(hyper_in_list, dim=1)
+
         b, c, h, w = upscaled_embedding_sam.shape
 
         masks_sam = (hyper_in[:, : self.num_mask_tokens - 1] @ upscaled_embedding_sam.view(b, c, h * w)).view(
