@@ -27,7 +27,11 @@ if __name__ == "__main__":
     ) as p:
         for ii in range(10):
             x = torch.randn(B, C, H, W) * 255
-            boxes = torch.tensor([[0.0, 0.0, 1024.0, 1024.0],])
+            boxes = torch.tensor(
+                [
+                    [0.0, 0.0, 1024.0, 1024.0],
+                ]
+            )
             with torch.no_grad():
                 y = model(x.to(device), boxes.to(device))
             torch.cuda.synchronize()

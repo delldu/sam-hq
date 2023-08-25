@@ -118,11 +118,7 @@ class MobileSAM(nn.Module):
 
         return iou_predictions, res_masks
 
-    def post_process_mask(self, masks, padded_h: int, padded_w: int, original_h:int, original_w: int):
-        # masks.size() -- [64, 3, 256, 256]
-        # padded_size -- (1024, 1024)
-        # original_size -- (1024, 1024)
-
+    def post_process_mask(self, masks, padded_h: int, padded_w: int, original_h: int, original_w: int):
         # self.image_encoder.img_size -- 1024
         masks = F.interpolate(
             masks,
@@ -130,7 +126,7 @@ class MobileSAM(nn.Module):
             mode="bilinear",
             align_corners=False,
         )
-        masks = masks[..., : padded_h, : padded_w]
+        masks = masks[..., :padded_h, :padded_w]
         masks = F.interpolate(masks, (original_h, original_w), mode="bilinear", align_corners=False)
         return masks
 

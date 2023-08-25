@@ -191,11 +191,3 @@ class Attention(nn.Module):
         out = self.out_proj(out)
 
         return out
-
-
-if __name__ == "__main__":
-    model = TwoWayTransformer()
-
-    model = torch.jit.script(model)
-    print(model)
-    # ==> OK

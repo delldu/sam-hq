@@ -12,7 +12,7 @@ import SAM
 import torch
 import random
 
-T = 15 # random.randint(0,20)
+T = 15  # random.randint(0,20)
 
 test_database = {}
 test_database["images/example0.png"] = torch.tensor(

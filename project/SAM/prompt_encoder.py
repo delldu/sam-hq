@@ -4,7 +4,6 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-# import numpy as np
 import math
 import torch
 from torch import nn
@@ -76,9 +75,6 @@ class PromptEncoder(nn.Module):
         return corner_embedding
 
     def _get_batch_size(self, coords: Optional[torch.Tensor], boxes: Optional[torch.Tensor]) -> int:
-        """
-        Gets the batch size of the output given the batch size of the input prompts.
-        """
         if coords is not None:
             return coords.shape[0]
         elif boxes is not None:
@@ -86,11 +82,11 @@ class PromptEncoder(nn.Module):
         else:
             return 1
 
-    def forward(self,
-        coords: Optional[torch.Tensor],
-        boxes: Optional[torch.Tensor],
+    def forward(
+        self, coords: Optional[torch.Tensor], boxes: Optional[torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         bs = self._get_batch_size(coords, boxes)
+
         sparse_embeddings = torch.empty((bs, 0, self.embed_dim), device=self.point_embeddings[0].weight.device)
         if coords is not None:
             point_embeddings = self._embed_points(coords, pad=(boxes is None))
@@ -110,23 +106,20 @@ class PositionEmbeddingRandom(nn.Module):
     """
     Positional encoding using random spatial frequencies.
     """
+
     def __init__(self, num_pos_feats: int = 128):
         super().__init__()
         scale = 1.0
         self.register_buffer("positional_encoding_gaussian_matrix", scale * torch.randn((2, num_pos_feats)))
-        
+
     def _pe_encoding(self, coords):
-        """Positionally encode points that are normalized to [0,1]."""
-        # assuming coords are in [0, 1]^2 square and have d_1 x ... x d_n x 2 shape
         coords = 2 * coords - 1
         # coords.size() -- [1, 2, 2]
         # self.positional_encoding_gaussian_matrix.size() -- [2, 128]
-        coords = coords @ self.positional_encoding_gaussian_matrix # ==> size() -- [1, 2, 128]
-        # coords = 2 * np.pi * coords
+        coords = coords @ self.positional_encoding_gaussian_matrix  # ==> size() -- [1, 2, 128]
         coords = 2 * math.pi * coords
 
-        # outputs d_1 x ... x d_n x C shape
-        return torch.cat([torch.sin(coords), torch.cos(coords)], dim=2) # ==> size() -- [1, 2, 256]
+        return torch.cat([torch.sin(coords), torch.cos(coords)], dim=2)  # ==> size() -- [1, 2, 256]
 
     def forward(self, size: Tuple[int, int]):
         """Generate positional encoding for a grid of the specified size."""
@@ -142,6 +135,6 @@ class PositionEmbeddingRandom(nn.Module):
     def forward_with_coords(self, coords_input, image_size: Tuple[int, int]):
         """Positionally encode points that are not normalized to [0,1]."""
         coords = coords_input.clone()
-        coords[:, :, 0] = coords[:, :, 0] / image_size[1] # x
-        coords[:, :, 1] = coords[:, :, 1] / image_size[0] # y
+        coords[:, :, 0] = coords[:, :, 0] / image_size[1]  # x
+        coords[:, :, 1] = coords[:, :, 1] / image_size[0]  # y
         return self._pe_encoding(coords.to(torch.float))  # B x N x C

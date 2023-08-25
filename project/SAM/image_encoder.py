@@ -269,8 +269,7 @@ class Attention(torch.nn.Module):
         # attn = (q @ k.transpose(-2, -1)) * self.scale + (
         #     self.attention_biases[:, self.attention_bias_idxs] if self.training else self.ab
         # )
-        attn = (q @ k.transpose(-2, -1)) * self.scale + (
-            self.attention_biases[:, self.attention_bias_idxs])
+        attn = (q @ k.transpose(-2, -1)) * self.scale + (self.attention_biases[:, self.attention_bias_idxs])
         attn = attn.softmax(dim=-1)
         x = (attn @ v).transpose(1, 2).reshape(B, N, self.dh)
         x = self.proj(x)
@@ -515,4 +514,3 @@ class TinyViT(nn.Module):
         x = x.permute(0, 3, 1, 2)
         x = self.neck(x)
         return x, interm_embeddings
-

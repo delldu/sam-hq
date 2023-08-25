@@ -14,7 +14,6 @@ from .transformer import TwoWayTransformer
 
 import pdb
 
-
 class MaskDecoderHQ(nn.Module):
     def __init__(
         self,
@@ -25,7 +24,7 @@ class MaskDecoderHQ(nn.Module):
         vit_dim=160,
     ):
         super().__init__()
-        activation=nn.GELU
+        activation = nn.GELU
         self.transformer = TwoWayTransformer()
         self.iou_token = nn.Embedding(1, transformer_dim)
         self.num_mask_tokens = num_multimask_outputs + 1
@@ -58,7 +57,6 @@ class MaskDecoderHQ(nn.Module):
             nn.GELU(),
             nn.ConvTranspose2d(transformer_dim, transformer_dim // 8, kernel_size=2, stride=2),
         )
-
         self.embedding_encoder = nn.Sequential(
             nn.ConvTranspose2d(transformer_dim, transformer_dim // 4, kernel_size=2, stride=2),
             LayerNorm2d(transformer_dim // 4),
@@ -80,13 +78,8 @@ class MaskDecoderHQ(nn.Module):
         dense_prompt_embeddings,
         interm_embeddings,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Predict masks given image and prompt embeddings.
-
-        """
-        vit_features = interm_embeddings.permute(
-            0, 3, 1, 2
-        )  # early-layer ViT feature, after 1st global attention block in ViT
+        vit_features = interm_embeddings.permute(0, 3, 1, 2)
+        # early-layer ViT feature, after 1st global attention block in ViT
         hq_features = self.embedding_encoder(image_embeddings) + self.compress_vit_feat(vit_features)
 
         masks, iou_pred = self.predict_masks(
@@ -97,17 +90,8 @@ class MaskDecoderHQ(nn.Module):
             hq_features=hq_features,
         )
 
-        # pdb.set_trace()
-        # iou_pred.size() -- [1, 4]
-        # masks.size() -- [1, 5, 256, 256]
-
-        # mask_slice = slice(0, 1)
-        # iou_pred = iou_pred[:, mask_slice] # size() --> [1, 1]
-        iou_pred = iou_pred[:, 0:1] # size() --> [1, 1]
-
-        # self.num_mask_tokens -- 5
-        # masks_hq = masks[:, slice(self.num_mask_tokens - 1, self.num_mask_tokens)] # ==> [1, 1, 256, 256]
-        masks_hq = masks[:, self.num_mask_tokens - 1: self.num_mask_tokens, :, :] # ==> [1, 1, 256, 256]
+        iou_pred = iou_pred[:, 0:1]  # size() --> [1, 1]
+        masks_hq = masks[:, self.num_mask_tokens - 1 : self.num_mask_tokens, :, :]  # ==> [1, 1, 256, 256]
 
         return iou_pred, masks_hq
 
@@ -155,7 +139,6 @@ class MaskDecoderHQ(nn.Module):
         hyper_in = torch.stack(hyper_in_list, dim=1)
 
         b, c, h, w = upscaled_embedding_sam.shape
-
         masks_sam = (hyper_in[:, : self.num_mask_tokens - 1] @ upscaled_embedding_sam.view(b, c, h * w)).view(
             b, -1, h, w
         )
@@ -163,20 +146,15 @@ class MaskDecoderHQ(nn.Module):
             b, -1, h, w
         )
         masks = torch.cat([masks_sam, masks_sam_hq], dim=1)
+
         # Generate mask quality predictions
         iou_pred = self.iou_prediction_head(iou_token_out)
 
         return masks, iou_pred
 
 
-# Lightly adapted from
-# https://github.com/facebookresearch/MaskFormer/blob/main/mask_former/modeling/transformer/transformer_predictor.py # noqa
 class MLP(nn.Module):
-    def __init__(self, 
-            input_dim=256, 
-            hidden_dim=256, 
-            output_dim=32, 
-            num_layers=3):
+    def __init__(self, input_dim=256, hidden_dim=256, output_dim=32, num_layers=3):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
