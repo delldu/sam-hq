@@ -11,7 +11,7 @@
 import SAM
 import torch
 
-T = 15
+T = 0
 test_database = {}
 test_database["images/example0.png"] = torch.tensor([
 		[4 + T, 13 + T, 1007 - T, 1023 - T],

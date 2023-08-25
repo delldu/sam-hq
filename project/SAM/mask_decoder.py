@@ -159,10 +159,10 @@ class MaskDecoderHQ(nn.Module):
         #         hyper_in_list.append(self.output_hypernetworks_mlps[i](mask_tokens_out[:, i, :]))
         #     else:
         #         hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, i, :]))
-        # # len(self.output_hypernetworks_mlps) -- 4
+        # len(self.output_hypernetworks_mlps) -- 4
         for i, m in enumerate(self.output_hypernetworks_mlps):
             hyper_in_list.append(m(mask_tokens_out[:, i, :]))
-        hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, i, :])) # i == 4
+        hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, 4, :])) # i == 4
 
         hyper_in = torch.stack(hyper_in_list, dim=1)
         b, c, h, w = upscaled_embedding_sam.shape
