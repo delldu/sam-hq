@@ -23,6 +23,7 @@ from torchvision.transforms import Compose, ToTensor, ToPILImage
 from pathlib import Path
 import pdb
 
+
 def draw_points_boxes(tensor, boxes):
     tensor.unsqueeze(0)
     image = ToPILImage()(tensor.squeeze(0))
@@ -33,9 +34,9 @@ def draw_points_boxes(tensor, boxes):
         x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
         # Suppose small box is point
         if (x2 - x1) < 10.0 and (y2 - y1) < 10.0:
-            x = int((x1 + x2)/2.0)
-            y = int((y1 + y2)/2.0)
-            draw.ellipse((x-5, y-5, x+5, y+5), fill="yellow")
+            x = int((x1 + x2) / 2.0)
+            y = int((y1 + y2) / 2.0)
+            draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill="yellow")
         else:
             draw.rectangle((x1, y1, x2, y2), fill=None, outline="green", width=1)
 
@@ -67,7 +68,7 @@ def get_model():
     # https://github.com/pytorch/pytorch/issues/52286
     torch._C._jit_set_profiling_executor(False)
     # C++ Reference
-    # torch::jit::getProfilingMode() = false;                                                                                                             
+    # torch::jit::getProfilingMode() = false;
     # torch::jit::setTensorExprFuserEnabled(false);
 
     # model = torch.jit.script(model)
@@ -84,10 +85,12 @@ def predict(test_database, output_dir):
 
     # load model
     model, device = get_model()
-    transform = Compose([
-        lambda image: image.convert("RGB"),
-        ToTensor(),
-    ])
+    transform = Compose(
+        [
+            lambda image: image.convert("RGB"),
+            ToTensor(),
+        ]
+    )
 
     # start predict
     progress_bar = tqdm(total=len(test_database))

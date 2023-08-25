@@ -14,10 +14,12 @@ from .transformer import TwoWayTransformer
 
 import pdb
 
+
 class MaskDecoderHQ(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         # *,
-        transformer_dim, # =256,
+        transformer_dim,  # =256,
         # transformer: nn.Module, # TwoWayTransformer()
         num_multimask_outputs=3,
         activation=nn.GELU,
@@ -44,38 +46,41 @@ class MaskDecoderHQ(nn.Module):
             activation(),
         )
         self.output_hypernetworks_mlps = nn.ModuleList(
-            [
-                MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3) for i in range(self.num_mask_tokens)
-            ]
+            [MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3) for i in range(self.num_mask_tokens)]
         )
 
         self.iou_prediction_head = MLP(transformer_dim, iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth)
 
         # HQ-SAM parameters
-        self.hf_token = nn.Embedding(1, transformer_dim) # HQ-Ouptput-Token
-        self.hf_mlp = MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3) # corresponding new MLP layer for HQ-Ouptput-Token
+        self.hf_token = nn.Embedding(1, transformer_dim)  # HQ-Ouptput-Token
+        self.hf_mlp = MLP(
+            transformer_dim, transformer_dim, transformer_dim // 8, 3
+        )  # corresponding new MLP layer for HQ-Ouptput-Token
         self.num_mask_tokens = self.num_mask_tokens + 1
-        
+
         # three conv fusion layers for obtaining HQ-Feature
         self.compress_vit_feat = nn.Sequential(
-                    nn.ConvTranspose2d(vit_dim, transformer_dim, kernel_size=2, stride=2),
-                    LayerNorm2d(transformer_dim),
-                    nn.GELU(), 
-                    nn.ConvTranspose2d(transformer_dim, transformer_dim // 8, kernel_size=2, stride=2))
-        
-        self.embedding_encoder = nn.Sequential(
-                    nn.ConvTranspose2d(transformer_dim, transformer_dim // 4, kernel_size=2, stride=2),
-                    LayerNorm2d(transformer_dim // 4),
-                    nn.GELU(),
-                    nn.ConvTranspose2d(transformer_dim // 4, transformer_dim // 8, kernel_size=2, stride=2),
-                )
-        self.embedding_maskfeature = nn.Sequential(
-                    nn.Conv2d(transformer_dim // 8, transformer_dim // 4, 3, 1, 1), 
-                    LayerNorm2d(transformer_dim // 4),
-                    nn.GELU(),
-                    nn.Conv2d(transformer_dim // 4, transformer_dim // 8, 3, 1, 1))
+            nn.ConvTranspose2d(vit_dim, transformer_dim, kernel_size=2, stride=2),
+            LayerNorm2d(transformer_dim),
+            nn.GELU(),
+            nn.ConvTranspose2d(transformer_dim, transformer_dim // 8, kernel_size=2, stride=2),
+        )
 
-    def forward(self,
+        self.embedding_encoder = nn.Sequential(
+            nn.ConvTranspose2d(transformer_dim, transformer_dim // 4, kernel_size=2, stride=2),
+            LayerNorm2d(transformer_dim // 4),
+            nn.GELU(),
+            nn.ConvTranspose2d(transformer_dim // 4, transformer_dim // 8, kernel_size=2, stride=2),
+        )
+        self.embedding_maskfeature = nn.Sequential(
+            nn.Conv2d(transformer_dim // 8, transformer_dim // 4, 3, 1, 1),
+            LayerNorm2d(transformer_dim // 4),
+            nn.GELU(),
+            nn.Conv2d(transformer_dim // 4, transformer_dim // 8, 3, 1, 1),
+        )
+
+    def forward(
+        self,
         image_embeddings,
         image_pe,
         sparse_prompt_embeddings,
@@ -88,7 +93,9 @@ class MaskDecoderHQ(nn.Module):
         Predict masks given image and prompt embeddings.
 
         """
-        vit_features = interm_embeddings.permute(0, 3, 1, 2) # early-layer ViT feature, after 1st global attention block in ViT
+        vit_features = interm_embeddings.permute(
+            0, 3, 1, 2
+        )  # early-layer ViT feature, after 1st global attention block in ViT
         hq_features = self.embedding_encoder(image_embeddings) + self.compress_vit_feat(vit_features)
 
         masks, iou_pred = self.predict_masks(
@@ -102,34 +109,34 @@ class MaskDecoderHQ(nn.Module):
         # Select the correct mask or masks for output
         if multimask_output:
             # mask with highest score
-            mask_slice = slice(1,self.num_mask_tokens-1)
+            mask_slice = slice(1, self.num_mask_tokens - 1)
             iou_pred = iou_pred[:, mask_slice]
-            iou_pred, max_iou_idx = torch.max(iou_pred,dim=1)
+            iou_pred, max_iou_idx = torch.max(iou_pred, dim=1)
             iou_pred = iou_pred.unsqueeze(1)
             masks_multi = masks[:, mask_slice, :, :]
-            masks_sam = masks_multi[torch.arange(masks_multi.size(0)),max_iou_idx].unsqueeze(1)
+            masks_sam = masks_multi[torch.arange(masks_multi.size(0)), max_iou_idx].unsqueeze(1)
         else:
             # singale mask output, default
             mask_slice = slice(0, 1)
-            iou_pred = iou_pred[:,mask_slice]
-            masks_sam = masks[:,mask_slice]
+            iou_pred = iou_pred[:, mask_slice]
+            masks_sam = masks[:, mask_slice]
 
-        masks_hq = masks[:,slice(self.num_mask_tokens-1, self.num_mask_tokens)]
+        masks_hq = masks[:, slice(self.num_mask_tokens - 1, self.num_mask_tokens)]
         if hq_token_only:
             masks = masks_hq
         else:
-            masks = masks_sam + masks_hq # image includes multiple objects ???
+            masks = masks_sam + masks_hq  # image includes multiple objects ???
         # Prepare output
         return iou_pred, masks
 
-    def predict_masks(self,
+    def predict_masks(
+        self,
         image_embeddings,
         image_pe,
         sparse_prompt_embeddings,
         dense_prompt_embeddings,
         hq_features,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
         # Concatenate output tokens
         output_tokens = torch.cat([self.iou_token.weight, self.mask_tokens.weight, self.hf_token.weight], dim=0)
         output_tokens = output_tokens.unsqueeze(0).expand(sparse_prompt_embeddings.size(0), -1, -1)
@@ -150,7 +157,7 @@ class MaskDecoderHQ(nn.Module):
         src = src.transpose(1, 2).view(b, c, h, w)
 
         upscaled_embedding_sam = self.output_upscaling(src)
-        upscaled_embedding_hq = self.embedding_maskfeature(upscaled_embedding_sam) + hq_features.repeat(b,1,1,1)
+        upscaled_embedding_hq = self.embedding_maskfeature(upscaled_embedding_sam) + hq_features.repeat(b, 1, 1, 1)
 
         hyper_in_list: List[torch.Tensor] = []
         # to support torch.jit.script
@@ -162,14 +169,18 @@ class MaskDecoderHQ(nn.Module):
         # len(self.output_hypernetworks_mlps) -- 4
         for i, m in enumerate(self.output_hypernetworks_mlps):
             hyper_in_list.append(m(mask_tokens_out[:, i, :]))
-        hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, 4, :])) # i == 4
+        hyper_in_list.append(self.hf_mlp(mask_tokens_out[:, 4, :]))  # i == 4
 
         hyper_in = torch.stack(hyper_in_list, dim=1)
         b, c, h, w = upscaled_embedding_sam.shape
 
-        masks_sam = (hyper_in[:,:self.num_mask_tokens-1] @ upscaled_embedding_sam.view(b, c, h * w)).view(b, -1, h, w)
-        masks_sam_hq = (hyper_in[:,self.num_mask_tokens-1:] @ upscaled_embedding_hq.view(b, c, h * w)).view(b, -1, h, w)
-        masks = torch.cat([masks_sam,masks_sam_hq],dim=1)
+        masks_sam = (hyper_in[:, : self.num_mask_tokens - 1] @ upscaled_embedding_sam.view(b, c, h * w)).view(
+            b, -1, h, w
+        )
+        masks_sam_hq = (hyper_in[:, self.num_mask_tokens - 1 :] @ upscaled_embedding_hq.view(b, c, h * w)).view(
+            b, -1, h, w
+        )
+        masks = torch.cat([masks_sam, masks_sam_hq], dim=1)
         # Generate mask quality predictions
         iou_pred = self.iou_prediction_head(iou_token_out)
 
@@ -183,9 +194,7 @@ class MLP(nn.Module):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
-        self.layers = nn.ModuleList(
-            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
-        )
+        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
         self.sigmoid_output = sigmoid_output
 
     def forward(self, x):

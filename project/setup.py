@@ -24,7 +24,10 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/delldu/sam-hq.git",
     packages=["SAM"],
-    package_data={"SAM": ["models/SAM.pth",]
+    package_data={
+        "SAM": [
+            "models/SAM.pth",
+        ]
     },
     include_package_data=True,
     classifiers=[

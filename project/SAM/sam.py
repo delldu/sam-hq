@@ -16,17 +16,18 @@ from .prompt_encoder import PromptEncoder
 from typing import List, Tuple, Optional
 import pdb
 
+
 class MobileSAM(nn.Module):
     def __init__(self, pixel_mean=[123.675, 116.28, 103.53], pixel_std=[58.395, 57.12, 57.375]):
         super().__init__()
-        self.MAX_H = 1024
-        self.MAX_W = 1024
-        self.MAX_TIMES = 2
+        # self.MAX_H = 1024
+        # self.MAX_W = 1024
+        # self.MAX_TIMES = 2
 
         prompt_embed_dim = 256
         image_size = 1024
         vit_patch_size = 16
-        image_embedding_size = image_size // vit_patch_size # 64
+        image_embedding_size = image_size // vit_patch_size  # 64
 
         self.image_size = image_size
         self.image_encoder = TinyViT()
@@ -48,12 +49,11 @@ class MobileSAM(nn.Module):
 
         self.load_weights()
 
-
     def forward(self, image, boxes):
-        '''
+        """
         image: 1xCxHxW
         boxes: Bx4
-        '''
+        """
         B, C, H, W = image.size()
         boxes[:, 0] = boxes[:, 0].clamp(0, W)
         boxes[:, 1] = boxes[:, 1].clamp(0, H)
@@ -73,8 +73,8 @@ class MobileSAM(nn.Module):
             y2: float = float(box[3].item())
             # Suppose small box is point
             if (x2 - x1) < 10.0 and (y2 - y1) < 10.0:
-                x: float = (x1 + x2)/2.0
-                y: float = (y1 + y2)/2.0
+                x: float = (x1 + x2) / 2.0
+                y: float = (y1 + y2) / 2.0
                 point_list.append(torch.tensor([x, y]).to(image.device))
             else:
                 boxes_list.append(torch.tensor([x1, y1, x2, y2]).to(image.device))
@@ -92,27 +92,23 @@ class MobileSAM(nn.Module):
 
         masks = self.post_process_mask(res_masks, (pad_h, pad_w), (H, W))
 
-        masks = (masks > 0.0)
+        masks = masks > 0.0
 
-        return masks # Bx1xHxW
+        return masks  # Bx1xHxW
 
-
-    def forward_x(self, image, coords: Optional[torch.Tensor], labels: Optional[torch.Tensor], boxes: Optional[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward_x(
+        self, image, coords: Optional[torch.Tensor], labels: Optional[torch.Tensor], boxes: Optional[torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         features, interm_features = self.image_encoder(image)
 
-        points: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
-        if coords is not None and labels is not None:
-            points = (coords[None, :, :], labels[None,  :])
-
-        # self.input_size -- (1024, 1024)
-        # points -- 
-        # (tensor([[[221., 482.],
-        #  [498., 633.],
-        #  [750., 379.]]], device='cuda:0'),
-        #  tensor([[1, 1, 1]], device='cuda:0', dtype=torch.int32))
+        if coords is not None:
+            coords = coords[None, :, :]
+            labels = labels[None, :]
 
         sparse_embeddings, dense_embeddings = self.prompt_encoder(
-            points=points,
+            # points=points,
+            coords=coords,
+            labels=labels,
             boxes=boxes,
             masks=None,
         )
@@ -134,7 +130,6 @@ class MobileSAM(nn.Module):
         # res_masks = res_masks[keep_mask]
         return iou_predictions, res_masks
 
-
     def post_process_mask(self, masks, padded_size: Tuple[int, int], input_size: Tuple[int, int]):
         # masks.size() -- [64, 3, 256, 256]
         # padded_size -- (1024, 1024)
@@ -147,28 +142,22 @@ class MobileSAM(nn.Module):
             mode="bilinear",
             align_corners=False,
         )
-        masks = masks[..., :padded_size[0], :padded_size[1]]
+        masks = masks[..., : padded_size[0], : padded_size[1]]
         masks = F.interpolate(masks, input_size, mode="bilinear", align_corners=False)
         return masks
 
     def pre_process_image(self, x) -> Tuple[torch.Tensor, int, int, float]:
-        # Normal
-        x = (x - self.pixel_mean) / self.pixel_std
-
-        # # Pad
-        # h, w = x.shape[-2:]
-        # padh = self.image_encoder.img_size - h
-        # padw = self.image_encoder.img_size - w
-        # x = F.pad(x, (0, padw, 0, padh))
-
         max_h = self.image_encoder.img_size
         max_w = self.image_encoder.img_size
+
+        # Normal
+        x = (x - self.pixel_mean) / self.pixel_std
 
         # Resize
         B, C, H, W = x.size()
         resize_s = 1.0
         if H > max_h or W > max_w:
-            resize_s = min(1.0 * max_h/H, 1.0 * max_w/W)
+            resize_s = min(1.0 * max_h / H, 1.0 * max_w / W)
             SH, SW = int(resize_s * H), int(resize_s * W)
             resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=True)
         else:
@@ -182,7 +171,6 @@ class MobileSAM(nn.Module):
 
         return resize_pad_x, pad_h, pad_w, resize_s
 
-
     def load_weights(self, model_path="models/SAM.pth"):
         cdir = os.path.dirname(__file__)
         checkpoint = model_path if cdir == "" else cdir + "/" + model_path
@@ -193,4 +181,3 @@ class MobileSAM(nn.Module):
         else:
             print("-" * 32, "Warnning", "-" * 32)
             print(f"model weight file '{checkpoint}'' not exist !!!")
-

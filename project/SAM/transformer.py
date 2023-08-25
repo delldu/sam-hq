@@ -6,7 +6,7 @@
 
 import math
 import torch
-from torch import Tensor, nn
+from torch import nn
 from typing import Tuple
 
 import pdb
@@ -17,13 +17,15 @@ class MLPBlock(nn.Module):
         super().__init__()
         self.lin1 = nn.Linear(embedding_dim, mlp_dim)
         self.lin2 = nn.Linear(mlp_dim, embedding_dim)
-        self.act = nn.ReLU() # nn.GELU()
+        self.act = nn.ReLU()  # !!! nn.GELU() !!!
 
     def forward(self, x):
         return self.lin2(self.act(self.lin1(x)))
 
+
 class TwoWayTransformer(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         depth=2,
         embedding_dim=256,
         num_heads=8,
@@ -53,12 +55,10 @@ class TwoWayTransformer(nn.Module):
                 )
             )
 
-        self.final_attn_token_to_image = Attention(
-            embedding_dim, num_heads, downsample_rate=attention_downsample_rate
-        )
+        self.final_attn_token_to_image = Attention(embedding_dim, num_heads, downsample_rate=attention_downsample_rate)
         self.norm_final_attn = nn.LayerNorm(embedding_dim)
 
-    def forward(self, image_embedding, image_pe, point_embedding) -> Tuple[Tensor, Tensor]:
+    def forward(self, image_embedding, image_pe, point_embedding) -> Tuple[torch.Tensor, torch.Tensor]:
         # BxCxHxW -> BxHWxC == B x N_image_tokens x C
         bs, c, h, w = image_embedding.shape
         image_embedding = image_embedding.flatten(2).permute(0, 2, 1)
@@ -83,7 +83,8 @@ class TwoWayTransformer(nn.Module):
 
 
 class TwoWayAttentionBlock(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         embedding_dim=256,
         num_heads=8,
         mlp_dim=2048,
@@ -111,8 +112,7 @@ class TwoWayAttentionBlock(nn.Module):
 
         self.skip_first_layer_pe = skip_first_layer_pe
 
-
-    def forward(self, queries, keys, query_pe, key_pe) -> Tuple[Tensor, Tensor]:
+    def forward(self, queries, keys, query_pe, key_pe) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self attention block
         if self.skip_first_layer_pe:
             queries = self.self_attn(q=queries, k=queries, v=queries)
@@ -150,11 +150,12 @@ class Attention(nn.Module):
     after projection to queries, keys, and values.
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         embedding_dim: int,
         num_heads: int,
         downsample_rate: int = 1,
-      ):
+    ):
         super().__init__()
         self.embedding_dim = embedding_dim
         self.internal_dim = embedding_dim // downsample_rate
@@ -199,6 +200,7 @@ class Attention(nn.Module):
         out = self.out_proj(out)
 
         return out
+
 
 if __name__ == "__main__":
     model = TwoWayTransformer()
